@@ -1,0 +1,6 @@
+.header-container {
+    display: flex;
+    background-color: var(--viridian-green);
+
+    height: 60px;
+}
