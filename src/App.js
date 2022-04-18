@@ -6,8 +6,8 @@ function App() {
   return (
     <>
       <Helmet>
-          <script src="https://cdn.pubnub.com/pubnub.js" async="true"></script>
-          <script src="https://stephenlb.github.io/webrtc-sdk/js/webrtc.js" async="true"></script>
+          <script src="https://cdn.pubnub.com/pubnub.min.js" async="true"></script>
+          <script src="https://cdn.pubnub.com/webrtc/webrtc-v2.js" async="true"></script>
       </Helmet>
       <Home />
     </>

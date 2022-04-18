@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 // import Header from '../header/header';
 // import Footer from '../footer/footer';
@@ -8,8 +8,7 @@ import { UserOutlined } from '@ant-design/icons';
 
 import './home.css';
 
-// import '../../assets/js/pubnub';
-// import '../../assets/js/webrtc';
+import PubNub from 'pubnub';
 
 const { SubMenu } = Menu;
 const { Header, Content, Footer, Sider } = Layout;
@@ -18,93 +17,129 @@ const Home = () => {
     const [dialNumber, setDialNumber] = useState("");
     const [dialNumberEnable, setDialNumberEnable] = useState(false);
     const [callNumber, setCallNumber] = useState("");
+    const [callNumberEnable, setCallNumberEnable] = useState(true);
+    
+    const [pubnubState, setPubnubState] = useState({});
+    const [myStream, setMyStream] = useState({});
+    const [userList, setUserList] = useState([]);
 
-    let phone = null;
+    function publishStream() {
+        var uuid = callNumber;
+        var tempPubnub = pubnubState;
 
-    // useEffect(() => {
-    //     const pubnub = document.createElement('script');
-    //     const webrtc = document.createElement('script');
-      
-    //     pubnub.src = "https://cdn.pubnub.com/pubnub.js";
-    //     pubnub.async = true;
-    //     webrtc.src = "https://stephenlb.github.io/webrtc-sdk/js/webrtc.js";
-    //     webrtc.async = true;
-      
-    //     document.body.appendChild(pubnub, webrtc);
-    //     console.log('body: ', document.body)
-      
-    //     return () => {
-    //       document.body.removeChild(pubnub, webrtc);
-    //     }
-    // }, []);
+		// tempPubnub.publish({
+		// 	user: uuid,
+		// 	stream: myStream
+		// });
 
-    const onLogIn = () => {
-        if(phone) {
-            phone.hangup();
-            setDialNumberEnable(false);
-        }else {
-            // eslint-disable-next-line no-undef
-            phone = PHONE({
-                number: dialNumber || 'Anonymous',
-                ssl: false,
-                publish_key: 'pub-c-852c429e-19e8-4546-a41b-5efa97ba9d2b',
-                subscribe_key: 'sub-c-f36d6a48-bcff-11ec-8ec5-9aa1b08a2b25',
-                media: true
-            });
-            setDialNumberEnable(true);
-        }
-
-        console.log('media: ', navigator.getUserMedia,navigator.webkitGetUserMedia,navigator.mozGetUserMedia,navigator.msGetUserMedia)
-        
-        phone.debug( info => { console.log('info: ', phone, info) } );
-        phone.unable( error => { alert('unable to connect', error) });
-
-        phone.ready( session => {
-            setDialNumberEnable(true);
-            // $('#username').css( 'background', '#55ff5b' );
-        } );
-
-        phone.receive(function(session){
-            session.ended( session => { document.querySelector('#vidbox').html('') } );
-            session.connected( session => {
-                document.querySelector('#vidbox').append(session.video);
-            });
+		tempPubnub.subscribe({
+			user: uuid,
+			stream: function (data, event) {
+				gotStream(event.stream, 'vidbox2');
+			},
+			disconnect: function (uuid, pc) {
+				document.querySelector('#vidbox2').src = "";
+                onHangup();
+            }
         });
 
-        return false;
+        setPubnubState(tempPubnub);
+    };	
+    
+    function gotStream(stream, locale) {
+        var video = document.querySelector(`#${locale}`);
+        video.srcObject = stream;
+        video.onloadedmetadata = function(e) {
+            video.play();
+        };
+	};
+
+    function onLogIn () {
+        var pubnub = new PubNub({
+            publishKey : "pub-c-852c429e-19e8-4546-a41b-5efa97ba9d2b",
+            subscribeKey : "sub-c-f36d6a48-bcff-11ec-8ec5-9aa1b08a2b25",
+            uuid: dialNumber
+        });
+
+        // pubnub.onNewConnection(function (uuid) {
+        //     if (myStream != null) {
+        //         publishStream(uuid);
+        //     }
+        // });
+
+        pubnub.subscribe({
+            channel: 'phonebook',
+            callback: function (message) {
+                console.log('msg: ', message)
+            },
+            presence: function (data) {
+                console.log('usuario: ', data)
+                if (data.action === 'join' && data.uuid !== dialNumber) {
+                    var parts = data.uuid.split('-');
+                    var newUser = {
+                        name: parts[1],
+                        id: parts[0]
+                    };
+                    var tempUserList = userList;
+                    tempUserList.push(newUser);
+                    setUserList(tempUserList);
+                } else if (data.action === 'leave' && data.uuid !== dialNumber) {
+                    // var parts = data.uuid.split('-');
+                    // var item = userList.find(“li[data-user=\”” + parts[0] + '\"]');
+                    // item.remove();
+                }
+            }
+        });
+    
+        pubnub.subscribe({
+            channel: 'answer',
+            callback: function (data) {
+                console.log('data: ', data)
+                if (data.caller === dialNumber) {
+                    publishStream(data.caller);
+                }
+            }
+        });
+        
+        setPubnubState(pubnub);
+        setCallNumberEnable(false);
+        
+        var tempUserList = userList;
+        tempUserList.push({
+            name: dialNumber,
+            id: dialNumber
+        });
+        setUserList(tempUserList)
+        
+        navigator.mediaDevices.getUserMedia({ audio: true, video: true}).then(function(stream) {
+            gotStream(stream, 'vidbox');
+
+            setMyStream(stream);
+        }).catch(function(err) {
+            console.log(err);
+        });
     }
 
-    const onCall = () => {
-        if (!window.phone)
-            alert('Login First!');
-        else
-            phone.dial(callNumber);
-        return false;
-    }
-
-    const onHangup = () => {
-        if(phone){
-            phone.hangup();
-        }
-
-        return false;
+    function onHangup () {
+        // tempPubnub.closeConnection(myStream, function () {
+		// 	document.querySelector('#vidbox').srcObject = "";
+		// })
     }
 
     return (
         <Layout style={{ height: '100vh' }}>
             <Header className="header">
                 <div className="logo" />
-                <Input disabled={dialNumberEnable} type={"number"} onChange={e => setDialNumber(e.target.value)} value={dialNumber} style={{width: '100px'}} placeholder="Log in" />
-                <Button onClick={onLogIn}>Log in</Button>
-                <Input type={"number"} onChange={e => setCallNumber(e.target.value)} value={callNumber} style={{width: '100px'}} placeholder="Call" />
-                <Button onClick={onCall}>Call</Button>
-                <Button onClick={onHangup}>Hangup</Button>
+                <Input min={1} disabled={dialNumberEnable ? 1 : 0} type={"number"} onChange={e => setDialNumber(e.target.value)} value={dialNumber} style={{width: '120px', marginRight: '8px'}} placeholder="Your ID" />
+                <Button type="primary" style={{marginRight: '8px'}} onClick={onLogIn}>Log in</Button>
+                <Input disabled={callNumberEnable ? 1 : 0} min={1} type={"number"} onChange={e => setCallNumber(e.target.value)} value={callNumber} style={{width: '120px', marginRight: '8px'}} placeholder="Call" />
+                <Button disabled={callNumberEnable ? 1 : 0} type="primary" style={{marginRight: '8px'}} onClick={publishStream}>Call</Button>
+                <Button disabled={callNumberEnable ? 1 : 0} type="primary" danger style={{marginRight: '8px'}} onClick={onHangup}>Hangup</Button>
             </Header>
             <Content style={{ display: 'flex', flexDirection: 'column', padding: '0 50px' }}>
                 <Breadcrumb style={{ margin: '16px 0' }}>
                     <Breadcrumb.Item>Home</Breadcrumb.Item>
-                    <Breadcrumb.Item>List</Breadcrumb.Item>
-                    <Breadcrumb.Item>App</Breadcrumb.Item>
+                    <Breadcrumb.Item>PubNub</Breadcrumb.Item>
                 </Breadcrumb>
                 <Layout className="site-layout-background">
                     <Sider className="site-layout-background" width={200}>
@@ -114,20 +149,24 @@ const Home = () => {
                         defaultOpenKeys={['sub1']}
                         style={{ height: '100%' }}
                     >
-                        <SubMenu key="sub1" icon={<UserOutlined />} title="subnav 1">
-                        <Menu.Item key="1">option1</Menu.Item>
-                        <Menu.Item key="2">option2</Menu.Item>
-                        <Menu.Item key="3">option3</Menu.Item>
-                        <Menu.Item key="4">option4</Menu.Item>
+                        <SubMenu key="sub1" icon={<UserOutlined />} title="Usuários">
+                            {
+                                userList.forEach(user => {
+                                    return(
+                                        <Menu.Item key="1">{user.name}</Menu.Item>
+                                    )
+                                })
+                            }
                         </SubMenu>
                     </Menu>
                     </Sider>
-                    <Content id='vidbox' style={{ padding: '24px', minHeight: 280 }}>
-                        teste
+                    <Content style={{ padding: '24px', minHeight: 280 }}>
+                        <video id='vidbox' style={{width: '25%'}}></video>
+                        <video id='vidbox2' style={{width: '25%'}}></video>
                     </Content>
                 </Layout>
             </Content>
-            <Footer style={{ textAlign: 'center' }}>Ant Design ©2018 Created by Ant UED</Footer>
+            <Footer style={{ textAlign: 'center' }}>PubNub Test ©2022 Alexandre Bento Pereira</Footer>
         </Layout>
     )
 }
